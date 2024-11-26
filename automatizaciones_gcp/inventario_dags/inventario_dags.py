@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Cargar credenciales de la cuenta de servicio
 credentials = service_account.Credentials.from_service_account_file(
-    'C:\\Users\\sashimi\\Desktop\\credenciales\\credencial_nicanor.json')
+    'C:\\ruta\\a\\credenciales\\credencial.json')
 
 # Crear cliente de la API de Composer
 composer_client = service_v1.EnvironmentsClient(credentials=credentials)
@@ -128,5 +128,5 @@ def create_dag_inventory(project_id, location, output_file):
 
 # Llamar a la función para generar el inventario
 if __name__ == "__main__":
-    create_dag_inventory('nicanor', 'us-central1',
-                         'dags_inventory_detailed.csv')
+    create_dag_inventory('proyecto', 'ubicacion',
+                         'inventario.csv')

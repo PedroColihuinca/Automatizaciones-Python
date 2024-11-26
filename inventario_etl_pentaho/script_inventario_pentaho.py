@@ -99,5 +99,5 @@ def crear_inventario_kjb(directorio_principal, archivo_salida="inventario_jobs.c
 
 
 # Ejemplo de uso:
-directorio_pentaho = r"C:\Users\pcolihui\Desktop\JOBS_PRD"
+directorio_pentaho = r"C:\ruta\a\directorio\etl"
 crear_inventario_kjb(directorio_pentaho)

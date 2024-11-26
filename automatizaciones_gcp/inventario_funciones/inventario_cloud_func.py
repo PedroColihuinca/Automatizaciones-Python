@@ -5,7 +5,7 @@ import csv
 from datetime import datetime
 
 # Remplaza por la ruta a tu archivo de credenciales
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:\\Users\\sashimi\\Desktop\\credenciales\\nicanor-cred.json"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:\\ruta\\a\\credenciales\\credencial.json"
 
 # Mapea los códigos de estado a nombres en español
 STATUS_MAP = {
@@ -183,8 +183,8 @@ def save_functions_to_csv(functions_data, filename='inventario_cloud_functions.c
 
 
 if __name__ == "__main__":
-    project_id = "nicanor"
-    location = "us-central1"
+    project_id = "proyecto"
+    location = "ubicacion"
 
     # Obtener funciones de primera y segunda generación
     functions_v1_data = list_functions_v1(project_id, location)

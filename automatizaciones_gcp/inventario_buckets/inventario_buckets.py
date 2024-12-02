@@ -3,8 +3,8 @@ from google.cloud import storage
 import csv
 
 # Configura las credenciales y el ID del proyecto
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'C:\\Users\\sashimi\\Desktop\\credenciales\\credencial_nicanor.json'
-PROYECTO_ID = "nicanor"
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = 'C:\\ruta\\a\\credenciales\\credencial.json'
+PROYECTO_ID = "proyecto"
 
 
 def listar_buckets():

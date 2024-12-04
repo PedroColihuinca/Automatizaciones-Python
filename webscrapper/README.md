@@ -1,6 +1,4 @@
-# Automatizaciones-Python
-Proyectos de automatización con Python
-Título: Sistema de Web Scraping para Análisis de Ofertas de Trabajo
+# Sistema de Web Scraping para Análisis de Ofertas de Trabajo
 Objetivo
 El objetivo de este proyecto es construir un sistema de scraping automatizado que extraiga información relevante sobre ofertas de trabajo en el sector informático, procesando los datos para obtener análisis sobre tendencias del mercado laboral.
 

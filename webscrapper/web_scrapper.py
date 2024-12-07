@@ -9,22 +9,22 @@ import time
 import random
 
 
-class IndeedScraperPlaywright:
-    def __init__(self, search_terms, pages=1, country_domain="cl"):
+class TrabajandoClScraperPlaywright:
+    def __init__(self, search_terms, pages=1):
         self.search_terms = [quote(term) for term in search_terms]
         self.pages = pages
-        self.country_domain = country_domain
         self.jobs_data = []
         self.setup_logging()
 
     def setup_logging(self):
         """Configura el registro de logs."""
         logging.basicConfig(
-            filename=f'indeed_scraper_{datetime.now().strftime("%Y%m%d")}.log',
+            filename=f'trabajando_scraper_{
+                datetime.now().strftime("%Y%m%d")}.log',
             level=logging.INFO,
             format='%(asctime)s - %(levelname)s - %(message)s'
         )
-        logging.info("Iniciando el scraper de Indeed para Chile")
+        logging.info("Iniciando el scraper de Trabajando.cl")
 
     def extract_technical_skills(self, description):
         """Extrae habilidades técnicas mencionadas en la descripción."""
@@ -55,24 +55,8 @@ class IndeedScraperPlaywright:
                 return int(match.group(1))
         return None
 
-    async def check_captcha(self, page):
-        """Verifica si aparece un CAPTCHA y espera su resolución."""
-        try:
-            captcha = await page.query_selector('div#g-recaptcha')
-            if captcha:
-                print("CAPTCHA detectado. Por favor, resuélvelo manualmente...")
-                while True:
-                    resolved = await page.query_selector('div#g-recaptcha[style*="display: none"]')
-                    if resolved:
-                        print("CAPTCHA resuelto. Continuando...")
-                        break
-                    # Espera 2 segundos antes de volver a verificar
-                    await asyncio.sleep(2)
-        except Exception as e:
-            logging.error(f"Error al verificar el CAPTCHA: {str(e)}")
-
-    async def scrape_indeed(self):
-        """Realiza el scraping de Indeed para Chile usando Playwright."""
+    async def scrape_trabajandocl(self):
+        """Realiza el scraping de Trabajando.cl usando Playwright."""
         async with async_playwright() as p:
             browser = await p.chromium.launch(headless=False)
             context = await browser.new_context(
@@ -84,20 +68,19 @@ class IndeedScraperPlaywright:
             try:
                 for term in self.search_terms:
                     for page_num in range(self.pages):
-                        url = f"https://www.indeed.{self.country_domain}/jobs?q={
-                            term}&l=Chile&start={page_num * 10}"
+                        url = f"https://www.trabajando.cl/empleos?q={
+                            term}&pagina={page_num+1}"
                         print(f"Accediendo a {url}...")
 
                         # Navegar a la página
                         await page.goto(url, wait_until='networkidle')
-                        await self.check_captcha(page)  # Verifica el CAPTCHA
                         await page.wait_for_timeout(random.randint(2000, 4000))
 
                         # Scroll suave
                         await self._scroll_page(page)
 
                         # Extraer trabajos
-                        jobs = await page.query_selector_all('.job_seen_beacon')
+                        jobs = await page.query_selector_all('.joblist__item')
 
                         if not jobs:
                             print(f"No se encontraron trabajos para {
@@ -146,18 +129,32 @@ class IndeedScraperPlaywright:
     async def _extract_job_data(self, job):
         """Extrae datos de una oferta de trabajo individual."""
         try:
-            title = await job.query_selector('.jobTitle')
-            company = await job.query_selector('.companyName')
-            location = await job.query_selector('.companyLocation')
-            description = await job.query_selector('.job-snippet')
-            salary = await job.query_selector('.salary-snippet-container')
+            title = await job.query_selector('.joblist__item-title')
+            company = await job.query_selector('.joblist__item-company')
+            location = await job.query_selector('.joblist__item-location')
+            description_link = await job.query_selector('.joblist__item-title a')
+
+            # Si encontramos un enlace, navegamos a la página de descripción
+            description_url = await description_link.get_attribute('href') if description_link else None
 
             title_text = await title.text_content() if title else "No disponible"
             company_text = await company.text_content() if company else "No disponible"
             location_text = await location.text_content() if location else "No disponible"
-            description_text = await description.text_content() if description else "No disponible"
-            salary_text = await salary.text_content() if salary else "No especificado"
 
+            # Descripción detallada
+            description_text = "No disponible"
+            if description_url:
+                # Abrir nueva página para obtener descripción completa
+                context = page.context
+                description_page = await context.new_page()
+                await description_page.goto(description_url, wait_until='networkidle')
+
+                description_element = await description_page.query_selector('.job-detail__description')
+                description_text = await description_element.text_content() if description_element else "No disponible"
+
+                await description_page.close()
+
+            # Extracción de habilidades técnicas
             skills = self.extract_technical_skills(description_text)
             experience_years = self.extract_experience_years(description_text)
 
@@ -166,7 +163,6 @@ class IndeedScraperPlaywright:
                 'company': company_text.strip(),
                 'location': location_text.strip(),
                 'description': description_text.strip(),
-                'salary': salary_text.strip(),
                 'languages': ", ".join(skills['languages']),
                 'databases': ", ".join(skills['databases']),
                 'clouds': ", ".join(skills['clouds']),
@@ -186,7 +182,7 @@ class IndeedScraperPlaywright:
             return
 
         df = pd.DataFrame(self.jobs_data)
-        output_file = f'indeed_jobs_chile_{
+        output_file = f'trabajando_jobs_chile_{
             datetime.now().strftime("%Y%m%d")}.csv'
         df.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
         logging.info(f"Datos guardados en {output_file}")
@@ -194,9 +190,9 @@ class IndeedScraperPlaywright:
 
     async def run(self):
         """Ejecuta el scraper."""
-        print("Iniciando scraping en Indeed para Chile...")
-        logging.info("Iniciando scraping en Indeed para Chile")
-        await self.scrape_indeed()
+        print("Iniciando scraping en Trabajando.cl para Chile...")
+        logging.info("Iniciando scraping en Trabajando.cl para Chile")
+        await self.scrape_trabajandocl()
         self.save_to_csv()
         print("Scraping completado!")
         logging.info("Scraping completado")
@@ -211,9 +207,8 @@ if __name__ == "__main__":
         "ingeniero de datos"
     ]
 
-    scraper = IndeedScraperPlaywright(
+    scraper = TrabajandoClScraperPlaywright(
         search_terms=search_terms,
-        pages=2,
-        country_domain="cl"
+        pages=2
     )
     asyncio.run(scraper.run())

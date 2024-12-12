@@ -1,219 +1,146 @@
-import asyncio
-from playwright.async_api import async_playwright
+import requests
+from bs4 import BeautifulSoup
 import pandas as pd
 import logging
-from datetime import datetime
 import re
-from urllib.parse import quote
 import time
 import random
+from datetime import datetime
+import lxml
+
+# Configuración del logger
+LOG_FILE = "trabajando_ti_scraper.log"
+logging.basicConfig(
+    filename=LOG_FILE,
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s",
+)
+
+# Configuración de salida
+OUTPUT_FILE = "trabajando_ti_jobs.csv"
+KEYWORDS = ["ingeniero", "informático", "analista",
+            "desarrollador", "programador", "software", "datos", "TI"]
+
+# Función para guardar los datos en CSV
 
 
-class IndeedScraperPlaywright:
-    def __init__(self, search_terms, pages=1, country_domain="cl"):
-        self.search_terms = [quote(term) for term in search_terms]
-        self.pages = pages
-        self.country_domain = country_domain
-        self.jobs_data = []
-        self.setup_logging()
+def save_to_csv(dataframe, file_name):
+    """Guarda los datos en un archivo CSV."""
+    try:
+        dataframe.to_csv(file_name, index=False, sep=";", encoding="utf-8-sig")
+        logging.info(f"Datos guardados exitosamente en {file_name}.")
+    except Exception as e:
+        logging.error(f"Error al guardar los datos en {file_name}: {str(e)}")
 
-    def setup_logging(self):
-        """Configura el registro de logs."""
-        logging.basicConfig(
-            filename=f'indeed_scraper_{datetime.now().strftime("%Y%m%d")}.log',
-            level=logging.INFO,
-            format='%(asctime)s - %(levelname)s - %(message)s'
-        )
-        logging.info("Iniciando el scraper de Indeed para Chile")
+# Función para extraer URLs del sitemap
 
-    def extract_technical_skills(self, description):
-        """Extrae habilidades técnicas mencionadas en la descripción."""
-        languages = r'python|javascript|java|c\+\+|c#|php|ruby|swift|kotlin|go|rust|typescript'
-        databases = r'mysql|postgresql|mongodb|oracle|sql server|sqlite|redis|elasticsearch'
-        clouds = r'aws|azure|gcp|google cloud|heroku|digitalocean'
-        tools = r'looker studio|power bi|tableau|kubernetes|jira|git'
 
-        skills = {
-            "languages": list(set(re.findall(languages, description.lower()))),
-            "databases": list(set(re.findall(databases, description.lower()))),
-            "clouds": list(set(re.findall(clouds, description.lower()))),
-            "tools": list(set(re.findall(tools, description.lower())))
-        }
-        return skills
+def extract_ti_urls_from_sitemap(sitemap_url):
+    """Extrae URLs relacionadas con el sector TI desde el sitemap."""
+    try:
+        response = requests.get(sitemap_url)
+        if response.status_code != 200:
+            logging.error(f"Error al obtener el sitemap: {
+                          response.status_code}")
+            return []
 
-    def extract_experience_years(self, description):
-        """Extrae los años de experiencia requeridos de la descripción."""
-        patterns = [
-            r'(\d+)[\s-]*años de experiencia',
-            r'experiencia[:\s]*(\d+)[\s-]*años',
-            r'(\d+)[\s-]*years of experience',
-            r'experience[:\s]*(\d+)[\s-]*years'
-        ]
-        for pattern in patterns:
-            match = re.search(pattern, description.lower())
-            if match:
-                return int(match.group(1))
-        return None
+        # Usar lxml como parser
+        soup = BeautifulSoup(response.content, "lxml-xml")
+        urls = []
+        for loc in soup.find_all("loc"):
+            url_text = loc.text
+            # Filtrar URLs relacionadas con el sector TI
+            if any(keyword in url_text.lower() for keyword in KEYWORDS):
+                urls.append(url_text)
+        logging.info(f"Se encontraron {
+                     len(urls)} URLs relacionadas con TI en el sitemap.")
+        return urls
+    except Exception as e:
+        logging.error(f"Error al procesar el sitemap: {str(e)}")
+        return []
 
-    async def check_captcha(self, page):
-        """Verifica si aparece un CAPTCHA y espera su resolución."""
-        try:
-            captcha = await page.query_selector('div#g-recaptcha')
-            if captcha:
-                print("CAPTCHA detectado. Por favor, resuélvelo manualmente...")
-                while True:
-                    resolved = await page.query_selector('div#g-recaptcha[style*="display: none"]')
-                    if resolved:
-                        print("CAPTCHA resuelto. Continuando...")
-                        break
-                    # Espera 2 segundos antes de volver a verificar
-                    await asyncio.sleep(2)
-        except Exception as e:
-            logging.error(f"Error al verificar el CAPTCHA: {str(e)}")
 
-    async def scrape_indeed(self):
-        """Realiza el scraping de Indeed para Chile usando Playwright."""
-        async with async_playwright() as p:
-            browser = await p.chromium.launch(headless=False)
-            context = await browser.new_context(
-                viewport={'width': 1920, 'height': 1080},
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-            )
-            page = await context.new_page()
+# Función para extraer datos de una oferta de trabajo
 
-            try:
-                for term in self.search_terms:
-                    for page_num in range(self.pages):
-                        url = f"https://www.indeed.{self.country_domain}/jobs?q={
-                            term}&l=Chile&start={page_num * 10}"
-                        print(f"Accediendo a {url}...")
 
-                        # Navegar a la página
-                        await page.goto(url, wait_until='networkidle')
-                        await self.check_captcha(page)  # Verifica el CAPTCHA
-                        await page.wait_for_timeout(random.randint(2000, 4000))
-
-                        # Scroll suave
-                        await self._scroll_page(page)
-
-                        # Extraer trabajos
-                        jobs = await page.query_selector_all('.job_seen_beacon')
-
-                        if not jobs:
-                            print(f"No se encontraron trabajos para {
-                                  term} en la página {page_num + 1}")
-                            continue
-
-                        for job in jobs:
-                            try:
-                                job_data = await self._extract_job_data(job)
-                                if job_data:
-                                    self.jobs_data.append(job_data)
-                            except Exception as e:
-                                logging.error(
-                                    f"Error procesando trabajo: {str(e)}")
-
-                        await page.wait_for_timeout(random.randint(4000, 8000))
-
-            except Exception as e:
-                logging.error(f"Error general en el scraping: {str(e)}")
-                print(f"Error: {str(e)}")
-            finally:
-                await browser.close()
-
-    async def _scroll_page(self, page):
-        """Realiza scroll suave en la página."""
-        await page.evaluate("""
-            async () => {
-                await new Promise((resolve) => {
-                    let totalHeight = 0;
-                    const distance = 100;
-                    const timer = setInterval(() => {
-                        const scrollHeight = document.body.scrollHeight;
-                        window.scrollBy(0, distance);
-                        totalHeight += distance;
-                        
-                        if(totalHeight >= scrollHeight){
-                            clearInterval(timer);
-                            resolve();
-                        }
-                    }, 100);
-                });
-            }
-        """)
-        await page.wait_for_timeout(1000)
-
-    async def _extract_job_data(self, job):
-        """Extrae datos de una oferta de trabajo individual."""
-        try:
-            title = await job.query_selector('.jobTitle')
-            company = await job.query_selector('.companyName')
-            location = await job.query_selector('.companyLocation')
-            description = await job.query_selector('.job-snippet')
-            salary = await job.query_selector('.salary-snippet-container')
-
-            title_text = await title.text_content() if title else "No disponible"
-            company_text = await company.text_content() if company else "No disponible"
-            location_text = await location.text_content() if location else "No disponible"
-            description_text = await description.text_content() if description else "No disponible"
-            salary_text = await salary.text_content() if salary else "No especificado"
-
-            skills = self.extract_technical_skills(description_text)
-            experience_years = self.extract_experience_years(description_text)
-
-            return {
-                'title': title_text.strip(),
-                'company': company_text.strip(),
-                'location': location_text.strip(),
-                'description': description_text.strip(),
-                'salary': salary_text.strip(),
-                'languages': ", ".join(skills['languages']),
-                'databases': ", ".join(skills['databases']),
-                'clouds': ", ".join(skills['clouds']),
-                'tools': ", ".join(skills['tools']),
-                'experience_years': experience_years,
-                'scraped_at': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            }
-        except Exception as e:
-            logging.error(f"Error extrayendo datos del trabajo: {str(e)}")
+def scrape_job_page(url):
+    """Scrapea la información de una página de oferta de trabajo."""
+    try:
+        logging.info(f"Procesando URL: {url}")
+        response = requests.get(url)
+        if response.status_code != 200:
+            logging.warning(f"No se pudo acceder a la página: {
+                            url} (Status: {response.status_code})")
             return None
 
-    def save_to_csv(self):
-        """Guarda los datos en un archivo CSV con delimitador ;."""
-        if not self.jobs_data:
-            logging.warning("No se encontraron datos para guardar.")
-            print("No se encontraron datos para guardar.")
-            return
+        soup = BeautifulSoup(response.content, "html.parser")
+        title = soup.find("h1", class_="titulo-oferta")
+        company = soup.find("a", class_="empresa")
+        location = soup.find("span", class_="ubicacion")
+        description = soup.find("div", class_="descripcion")
 
-        df = pd.DataFrame(self.jobs_data)
-        output_file = f'indeed_jobs_chile_{
-            datetime.now().strftime("%Y%m%d")}.csv'
-        df.to_csv(output_file, index=False, sep=';', encoding='utf-8-sig')
-        logging.info(f"Datos guardados en {output_file}")
-        print(f"Datos guardados en {output_file}")
+        # Extraer habilidades técnicas y experiencia
+        description_text = description.text if description else ""
+        skills = extract_technical_skills(description_text)
+        experience_years = extract_experience_years(description_text)
 
-    async def run(self):
-        """Ejecuta el scraper."""
-        print("Iniciando scraping en Indeed para Chile...")
-        logging.info("Iniciando scraping en Indeed para Chile")
-        await self.scrape_indeed()
-        self.save_to_csv()
-        print("Scraping completado!")
-        logging.info("Scraping completado")
+        return {
+            "Fuente": "Trabajando.cl",
+            "Título": title.text.strip() if title else "N/A",
+            "Empresa": company.text.strip() if company else "N/A",
+            "Ubicación": location.text.strip() if location else "N/A",
+            "Descripción": description_text.strip(),
+            "Habilidades": ", ".join(skills),
+            "Años de experiencia": experience_years,
+            "URL": url,
+        }
+    except Exception as e:
+        logging.error(f"Error al procesar la página {url}: {str(e)}")
+        return None
+
+# Funciones auxiliares para extraer habilidades y experiencia
 
 
+def extract_technical_skills(description):
+    """Extrae habilidades técnicas mencionadas en la descripción."""
+    skills_regex = r'python|javascript|java|c\+\+|c#|php|ruby|swift|kotlin|go|rust|typescript|sql|aws|azure|gcp|docker|kubernetes'
+    return list(set(re.findall(skills_regex, description.lower())))
+
+
+def extract_experience_years(description):
+    """Extrae los años de experiencia requeridos."""
+    match = re.search(r'(\d+)[\s-]*años de experiencia', description.lower())
+    return int(match.group(1)) if match else None
+
+# Función principal de scraping
+
+
+def scrape_trabajando_ti(sitemap_url, max_urls=20):
+    """Scrapea ofertas laborales del sector TI en Trabajando.cl."""
+    logging.info("Iniciando scraping en Trabajando.cl (sector TI)...")
+    urls = extract_ti_urls_from_sitemap(sitemap_url)[:max_urls]
+    job_data = []
+
+    for url in urls:
+        job = scrape_job_page(url)
+        if job:
+            job_data.append(job)
+
+        # Introducir un delay aleatorio para no sobrecargar el servidor
+        delay = random.uniform(2, 5)  # Entre 2 y 5 segundos
+        logging.info(f"Delay de {delay:.2f} segundos.")
+        time.sleep(delay)
+
+    if job_data:
+        df = pd.DataFrame(job_data)
+        save_to_csv(df, OUTPUT_FILE)
+    else:
+        logging.warning(
+            "No se recopilaron datos de ofertas laborales relacionadas con TI.")
+    logging.info("Proceso de scraping finalizado.")
+
+
+# Main
 if __name__ == "__main__":
-    search_terms = [
-        "ingeniero informático",
-        "ingeniero de software",
-        "analista de software",
-        "analista de datos",
-        "ingeniero de datos"
-    ]
-
-    scraper = IndeedScraperPlaywright(
-        search_terms=search_terms,
-        pages=2,
-        country_domain="cl"
-    )
-    asyncio.run(scraper.run())
+    sitemap_url = "https://www.trabajando.cl/sitemap-ofertas.xml"
+    scrape_trabajando_ti(sitemap_url, max_urls=20)

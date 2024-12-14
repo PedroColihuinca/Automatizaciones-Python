@@ -9,7 +9,7 @@ from datetime import datetime
 import lxml
 
 # Configuración del logger
-LOG_FILE = "trabajando_ti_scraper.log"
+LOG_FILE = "trabajando_ti.log"
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,

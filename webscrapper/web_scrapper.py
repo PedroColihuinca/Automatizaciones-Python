@@ -2,14 +2,12 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import logging
-import re
 import time
 import random
 from datetime import datetime
-import lxml
 
 # Configuración del logger
-LOG_FILE = "trabajando_ti.log"
+LOG_FILE = "trabajando_ofertas.log"
 logging.basicConfig(
     filename=LOG_FILE,
     level=logging.INFO,
@@ -17,9 +15,7 @@ logging.basicConfig(
 )
 
 # Configuración de salida
-OUTPUT_FILE = "trabajando_ti_jobs.csv"
-KEYWORDS = ["ingeniero", "informático", "analista",
-            "desarrollador", "programador", "software", "datos", "TI"]
+OUTPUT_FILE = "trabajando_jobs.csv"
 
 # Función para guardar los datos en CSV
 
@@ -32,115 +28,72 @@ def save_to_csv(dataframe, file_name):
     except Exception as e:
         logging.error(f"Error al guardar los datos en {file_name}: {str(e)}")
 
-# Función para extraer URLs del sitemap
+# Función para extraer las ofertas desde listadoOfertas
 
 
-def extract_ti_urls_from_sitemap(sitemap_url):
-    """Extrae URLs relacionadas con el sector TI desde el sitemap."""
-    try:
-        response = requests.get(sitemap_url)
-        if response.status_code != 200:
-            logging.error(f"Error al obtener el sitemap: {
-                          response.status_code}")
-            return []
-
-        # Usar lxml como parser
-        soup = BeautifulSoup(response.content, "lxml-xml")
-        urls = []
-        for loc in soup.find_all("loc"):
-            url_text = loc.text
-            # Filtrar URLs relacionadas con el sector TI
-            if any(keyword in url_text.lower() for keyword in KEYWORDS):
-                urls.append(url_text)
-        logging.info(f"Se encontraron {
-                     len(urls)} URLs relacionadas con TI en el sitemap.")
-        return urls
-    except Exception as e:
-        logging.error(f"Error al procesar el sitemap: {str(e)}")
-        return []
-
-
-# Función para extraer datos de una oferta de trabajo
-
-
-def scrape_job_page(url):
-    """Scrapea la información de una página de oferta de trabajo."""
-    try:
-        logging.info(f"Procesando URL: {url}")
-        response = requests.get(url)
-        if response.status_code != 200:
-            logging.warning(f"No se pudo acceder a la página: {
-                            url} (Status: {response.status_code})")
-            return None
-
-        soup = BeautifulSoup(response.content, "html.parser")
-        title = soup.find("h1", class_="titulo-oferta")
-        company = soup.find("a", class_="empresa")
-        location = soup.find("span", class_="ubicacion")
-        description = soup.find("div", class_="descripcion")
-
-        # Extraer habilidades técnicas y experiencia
-        description_text = description.text if description else ""
-        skills = extract_technical_skills(description_text)
-        experience_years = extract_experience_years(description_text)
-
-        return {
-            "Fuente": "Trabajando.cl",
-            "Título": title.text.strip() if title else "N/A",
-            "Empresa": company.text.strip() if company else "N/A",
-            "Ubicación": location.text.strip() if location else "N/A",
-            "Descripción": description_text.strip(),
-            "Habilidades": ", ".join(skills),
-            "Años de experiencia": experience_years,
-            "URL": url,
-        }
-    except Exception as e:
-        logging.error(f"Error al procesar la página {url}: {str(e)}")
-        return None
-
-# Funciones auxiliares para extraer habilidades y experiencia
-
-
-def extract_technical_skills(description):
-    """Extrae habilidades técnicas mencionadas en la descripción."""
-    skills_regex = r'python|javascript|java|c\+\+|c#|php|ruby|swift|kotlin|go|rust|typescript|sql|aws|azure|gcp|docker|kubernetes'
-    return list(set(re.findall(skills_regex, description.lower())))
-
-
-def extract_experience_years(description):
-    """Extrae los años de experiencia requeridos."""
-    match = re.search(r'(\d+)[\s-]*años de experiencia', description.lower())
-    return int(match.group(1)) if match else None
-
-# Función principal de scraping
-
-
-def scrape_trabajando_ti(sitemap_url, max_urls=20):
-    """Scrapea ofertas laborales del sector TI en Trabajando.cl."""
-    logging.info("Iniciando scraping en Trabajando.cl (sector TI)...")
-    urls = extract_ti_urls_from_sitemap(sitemap_url)[:max_urls]
+def scrape_listado_ofertas(base_url, max_ids=30):
+    """Extrae ofertas de trabajo desde el listado principal."""
+    logging.info("Iniciando extracción de listado de ofertas...")
     job_data = []
 
-    for url in urls:
-        job = scrape_job_page(url)
-        if job:
-            job_data.append(job)
+    for oferta_id in range(max_ids):
+        try:
+            # Construir la URL de cada oferta
+            url = f"{base_url}/{oferta_id}"
+            logging.info(f"Procesando oferta con ID: {
+                         oferta_id} en URL: {url}")
+            response = requests.get(url)
+            if response.status_code != 200:
+                logging.warning(f"No se pudo acceder a la página: {
+                                url} (Status: {response.status_code})")
+                continue
 
-        # Introducir un delay aleatorio para no sobrecargar el servidor
-        delay = random.uniform(2, 5)  # Entre 2 y 5 segundos
-        logging.info(f"Delay de {delay:.2f} segundos.")
-        time.sleep(delay)
+            soup = BeautifulSoup(response.content, "html.parser")
+            detalle = soup.find("div", class_="detalleOfertaContainer")
+            if not detalle:
+                logging.warning(
+                    f"No se encontró el detalle para la oferta con ID: {oferta_id}")
+                continue
 
-    if job_data:
-        df = pd.DataFrame(job_data)
-        save_to_csv(df, OUTPUT_FILE)
-    else:
-        logging.warning(
-            "No se recopilaron datos de ofertas laborales relacionadas con TI.")
-    logging.info("Proceso de scraping finalizado.")
+            # Extraer información
+            title = detalle.find("h1").text.strip(
+            ) if detalle.find("h1") else "N/A"
+            company = detalle.find("a", class_="empresa").text.strip(
+            ) if detalle.find("a", class_="empresa") else "N/A"
+            location = detalle.find("span", class_="ubicacion").text.strip(
+            ) if detalle.find("span", class_="ubicacion") else "N/A"
+            description = detalle.find("div", class_="descripcion").text.strip(
+            ) if detalle.find("div", class_="descripcion") else "N/A"
+
+            # Guardar los datos de la oferta
+            job_data.append({
+                "ID Oferta": oferta_id,
+                "Título": title,
+                "Empresa": company,
+                "Ubicación": location,
+                "Descripción": description,
+                "URL": url
+            })
+
+            # Delay entre solicitudes
+            delay = random.uniform(2, 4)
+            logging.info(f"Delay de {delay:.2f} segundos.")
+            time.sleep(delay)
+
+        except Exception as e:
+            logging.error(f"Error al procesar la oferta con ID: {
+                          oferta_id}: {str(e)}")
+
+    logging.info(f"Se extrajeron {len(job_data)} ofertas de trabajo.")
+    return pd.DataFrame(job_data)
 
 
 # Main
 if __name__ == "__main__":
-    sitemap_url = "https://www.trabajando.cl/sitemap-ofertas.xml"
-    scrape_trabajando_ti(sitemap_url, max_urls=20)
+    base_url = "https://www.trabajando.cl/listadoOfertas"
+    job_dataframe = scrape_listado_ofertas(base_url, max_ids=30)
+
+    if not job_dataframe.empty:
+        save_to_csv(job_dataframe, OUTPUT_FILE)
+    else:
+        logging.warning("No se recopilaron datos de ofertas laborales.")
